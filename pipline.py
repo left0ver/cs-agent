@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Literal
 
 from dotenv import load_dotenv
@@ -9,6 +10,7 @@ from answer_product_query import answer_product_query
 from query_classification import ensembles_query_classification
 from utils import language_detect
 
+IMAGE_ROOT_DIR = os.getenv("IMAGE_ROOT_DIR", "data/KownledgeBase/手册/插图")
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
@@ -41,7 +43,7 @@ async def wrap_ensembles_query_classification(x: dict):
     return await ensembles_query_classification(x["query"])
 
 
-def router_by_query_cls(x: dict) -> str:
+async def router_by_query_cls(x: dict) -> str:
     """
     根据问题分类的结果进行路由, 同时问题通过answer_general_query, 产品问题则使用answer_product_query
     """
@@ -50,24 +52,47 @@ def router_by_query_cls(x: dict) -> str:
     question_type = query_cls["question_type"]
     top_k = x["top_k"]
     use_source = x["use_source"]
+    top_token = x["top_token"]
+    min_top_k = x["min_top_k"]
+    max_top_k = x["max_top_k"]
     if query_cls["source"] is None and question_type == "general":
         queries = query.split(",\n")
         return answer_general_query(queries, "1")
     else:
-        return answer_product_query(
-            query, "1", query_cls, top_k=top_k, use_source=use_source
+        ret = await answer_product_query(
+            query,
+            "1",
+            query_cls,
+            top_k=top_k,
+            use_source=use_source,
+            top_token=top_token,
+            min_top_k=min_top_k,
+            max_top_k=max_top_k,
         )
+        return ret
 
-
-async def pipeline(query: str) -> str | None:
-    top_k = 10
+async def pipeline(
+    query: str,
+    top_k: int,
+    top_token: int,
+    min_top_k: int,
+    max_top_k: int,
+) -> str | None:
     pipeline_chain = RunnablePassthrough.assign(
         query_cls=RunnableLambda(wrap_ensembles_query_classification)
     ) | RunnableLambda(router_by_query_cls)
 
     answer = await pipeline_chain.with_retry().ainvoke(
-        {"query": query.strip('"'), "top_k": top_k, "use_source": True}
+        {
+            "query": query.strip('"'),
+            "top_k": top_k,
+            "use_source": True,
+            "top_token": top_token,
+            "min_top_k": min_top_k,
+            "max_top_k": max_top_k,
+        }
     )
+
     return answer
 
 
@@ -76,8 +101,60 @@ if __name__ == "__main__":
 
     async def main():
 
-        # query = "使用和操作VR头显时应采取哪些安全预防措施，以确保用户安全和设备使用寿命？"
-        query = "我收到的商品和图片不一样，颜色偏差很大，我要投诉！"
-        answer = await pipeline(query)
-        print(answer)
+        query = "操作吹风机时，人员需要注意哪些安全要点？"
+        query = "空气净化器通常有哪些模式？如何设置？这些模式有什么特点？"
+        query = "使用吹风机时，如何调节化油器？"
+        query = "吹风机冷机时，该如何启动？"
+        query = "吹风机热机时，该如何启动？"
+
+        # query = "我收到的商品和图片不一样，颜色偏差很大，我要投诉！"
+        top_k = 19
+        top_token = -1
+        min_top_k = 5
+        max_top_k = 30
+        queries = [
+            # "该如何关闭吹风机？",
+            # "空调的重要组成部件有哪些？",
+            # "如何找到空调遥控器的按键？",
+            # "如何给空调遥控器安装电池？",
+            # "如何安装空调遥控器支架？",
+            # "如何用空调快速调节室内温度？",
+            # "如何使用空调的自清洁运行功能？",
+            # "如何使用空调的等离子净化功能？",
+            # "单冷型空调如何开启自动运行模式？",
+            # "如何使用空调的自动转换运行功能？",
+            # "如何开启空调的节能制冷模式？",
+            # "无遥控器时如何操作空调？",
+            "空气净化器需要长期存放时该怎么做？",
+            "健身追踪器是如何测量我的心率的？",
+            "如何在Windows系统中为蓝牙激光鼠标设置快速配对？",
+            "如何使用烤箱的滑动搁架？",
+            "How can you install the handset of a landline?"
+            "如何让空调实现自动重启？",
+            "不同型号空调的清洁频率是多少？",
+            "如何清洁空调的空气滤网？",
+            "如何清洁空调的3M多重防护滤网？",
+            "如何清洁空调的等离子滤网？",
+            "如何快速组装蒸汽清洁机？",
+            "蒸汽清洁机有哪些实用的产品功能？如何快速上手使用？",
+            "如何使用蒸汽清洁机清洁硬质地面？",
+            "组装人体工学椅涉及哪些部件？",
+            "椅子的扶手使用一段时间后为什么会松动？",
+            "这款椅子有哪些功能？",
+            "洗碗机的部件有哪些？",
+            "首次使用时，如何将洗碗机连接到排水口？",
+            "使用前如何为洗碗机添加专用盐？",
+            "如何为洗碗机添加洗涤剂？",
+            "如何为洗碗机添加洗涤块？",
+        ]
+        for query in queries:
+            answer = await pipeline(
+                query,
+                top_k,
+                top_token,
+                min_top_k,
+                max_top_k,
+            )
+            # print(answer)
+
     asyncio.run(main())

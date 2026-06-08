@@ -32,7 +32,11 @@ def answer_general_query(queries: list[str], thread_id: str) -> str:
 1. 绝不与客户争吵：无论客户多么愤怒，都必须保持冷静和礼貌，绝不能使用反问句或攻击性语言。如果无法处理，主动引导转人工客服。
 2. 不要使用任何emoji表情。
 3. 语言要求：客户使用的是什么语言，你必须使用相同的语言进行回答。
-4. 你只需要针对用户的问题进行回答即可，不需要说自己是xxx专属客服"""
+4. 你只需要针对用户的问题进行回答即可，不需要说自己是xxx专属客服
+
+# 回复格式要求
+1. 不要换行，不要使用1. 2. 3. 的序号
+"""
     agent = create_agent(
         model=general_question_llm,
         system_prompt=customer_system_prompt,

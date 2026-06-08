@@ -4,9 +4,10 @@ compare
 knowledge_bank
 submission
 processed_data
-
-
-
+knowledge_bank_without_context
+eval
+experiment
+statistics_retriever_length
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

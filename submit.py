@@ -2,18 +2,29 @@ import asyncio
 from pathlib import Path
 
 import pandas as pd
+from dotenv import load_dotenv
 from tqdm import tqdm
 
+from config import get_config
 from pipline import pipeline
 
+load_dotenv()
 
-async def submit(submit_file: str):
+
+async def submit():
     """
     对所有问题生成回答并提交
     """
+    top_k = 19
+    top_token = -1
+    min_top_k = 5
+    max_top_k = 30
+    collection_name = get_config()["MILVUS_COLLECTION_NAME"]
+    use_query_cls = get_config()["USE_QUERY_CLS"]
+    submit_file = f"submission/submit_all_top_k={top_k}_use_query_cls={use_query_cls}_{collection_name}.csv"
     question_file = "data/question_public.csv"
     df = pd.read_csv(question_file, index_col="id")
-    product_questions_start_id = 0
+    product_questions_start_id = 64
     product_questions_end_id = 436
 
     exist_last_id = -1
@@ -34,7 +45,17 @@ async def submit(submit_file: str):
         if row[0] >= product_questions_start_id and row[0] <= product_questions_end_id:
             # for _ in range(max_concurrency):
             question = row[1]["question"].strip('"')
-            tasks.append(asyncio.create_task(pipeline(question)))
+            tasks.append(
+                asyncio.create_task(
+                    pipeline(
+                        question,
+                        top_k,
+                        top_token,
+                        min_top_k,
+                        max_top_k,
+                    )
+                )
+            )
             batch_ids.append(row[0])
             max_concurrency -= 1
         else:
@@ -65,5 +86,5 @@ async def submit(submit_file: str):
 
 if __name__ == "__main__":
     # 修改文件名
-    submit_file = "submit_gpt_5_5_all_top_k_15_ensembles_query_cls.csv"
-    asyncio.run(submit(submit_file))
+    # submit_file = "submit_gpt_5_5_all_top_k_15_ensembles_query_cls.csv"
+    asyncio.run(submit())

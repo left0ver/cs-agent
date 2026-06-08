@@ -1,56 +1,35 @@
 import logging
 import os
-import re
-from typing import Literal, cast
+from typing import Literal
 
-from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_openai import ChatOpenAI
 
+from llm_judge_result import judge_result_by_llm, refine_answer
 from retriever import retriever
-from utils import language_detect
+from utils import language_detect, parse_answer
+
+load_dotenv()
+
+IMAGE_ROOT_DIR = os.getenv("IMAGE_ROOT_DIR", "data/KownledgeBase/手册/插图")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-load_dotenv()
-
-
-def parse_answer(answer: str) -> tuple[str, list[str]]:
-    """
-    解析LLM生成的内容,提取图片名称和回答内容
-    """
-    match = re.search(r"<answer>(.*?)</answer>", answer, re.DOTALL)
-    if match:
-        content = match.group(1).strip()
-        soup = BeautifulSoup(content, "html.parser")
-        pics = soup.find_all("pic")
-        image_names = cast(list[str], [pic.get("image_name") for pic in pics])
-
-        for pic in pics:
-            content = content.replace(str(pic), "<PIC>")
-
-        pic_count = content.count("<PIC>")
-        if pic_count != len(image_names):
-            raise Exception("替换之后的PIC的数量和解析出来的图片数量不一致")
-        return content, image_names
-    else:
-        raise Exception("LLM生成的格式有问题")
 
 
 def ensure_answer_language(
     answer: str, image_names: list[str], query_language: Literal["chinese", "english"]
-) -> tuple[str, list[str]]:
+) -> bool:
     """
     确保answer的语言和query_language的语言一致
     """
     answer_language = language_detect(answer)
     if answer_language != query_language:
         raise Exception(f"模型回答的的语言不是{query_language}")
-
-    return answer, image_names
+    return True
 
 
 def llm_can_answer_the_question(answer: str) -> bool:
@@ -61,13 +40,30 @@ def llm_can_answer_the_question(answer: str) -> bool:
         return False
     return True
 
+
+async def get_context(x: dict) -> str:
+    results = await retriever(
+        x["query"],
+        x["query_cls"],
+        x["top_k"],
+        x["use_source"],
+        x["top_token"],
+        x["min_top_k"],
+        x["max_top_k"],
+    )
+    return "\n\n".join([result.page_content for result in results])
+
+
 # TODO: 多理多轮对话的情况,但是目前初赛中product的题目没有多轮对话的情况
-def answer_product_query(
+async def answer_product_query(
     query: str,
     thread_id: str,
     query_cls: dict,
-    top_k: int = 10,
-    use_source: bool = True,
+    top_k: int,
+    use_source: bool,
+    top_token: int,
+    min_top_k: int,
+    max_top_k: int,
 ):
     llm = ChatOpenAI(
         model="gpt-5.5",
@@ -84,7 +80,7 @@ def answer_product_query(
 3. 图片必须和答案相关，能够解决用户的问题，并且有助于用户更好地理解答案
 4. 用户的问题是什么语言，你的答案也必须是什么语言
 5. 如果所给的上下文不能回答用户的问题，你需要回答“我不能回答这个问题”,如果用户的语言是英文，则回答“I cannot answer the question”
-6. 如果所给的上下文中有能够直接回答用户问题的内容，**优先采用上下文中的原本的内容来回答**
+6. 如果所给的上下文中有能够直接回答用户问题的内容，**你需要优先采用上下文中的原本的内容来回答，不要使用markdown的加粗的语法,不需要加粗，文字和图片顺序需要和原文保持一致**
 
 # 输出格式
 你必须使用answer标签来包裹你的答案，如下:
@@ -104,16 +100,7 @@ def answer_product_query(
     )
 
     product_answer_chain = (
-        RunnablePassthrough.assign(
-            context=lambda x: "\n\n".join(
-                [
-                    result.page_content
-                    for result in retriever(
-                        x["query"], x["query_cls"], x["top_k"], x["use_source"]
-                    )
-                ]
-            )
-        )
+        RunnablePassthrough.assign(context=RunnableLambda(get_context))
         | RunnablePassthrough.assign(
             parsed_answer=(
                 generate_answer_prompt
@@ -122,8 +109,8 @@ def answer_product_query(
                 | RunnableLambda(parse_answer)
             )
         )
-        | RunnableLambda(
-            lambda x: ensure_answer_language(
+        | RunnablePassthrough.assign(
+            is_correct_language=lambda x: ensure_answer_language(
                 x["parsed_answer"][0],
                 x["parsed_answer"][1],
                 x["query_cls"]["language"],
@@ -131,28 +118,48 @@ def answer_product_query(
         )
     )
     # 第一次回答
-    answer, image_names = product_answer_chain.invoke(
+    res = await product_answer_chain.ainvoke(
         {
             "query": query.strip('"'),
             "query_cls": query_cls,
             "top_k": top_k,
             "use_source": use_source,
+            "top_token": top_token,
+            "min_top_k": min_top_k,
+            "max_top_k": max_top_k,
         }
     )
 
-    if not llm_can_answer_the_question(answer):
-        logger.info(f"first answer: {query} -> {answer}")
+    if not llm_can_answer_the_question(res["parsed_answer"][0]):
+        logger.info(f"first answer: {query} -> {res['parsed_answer'][0]}")
         # 第二次回答
-        answer, image_names = product_answer_chain.with_retry().invoke(
+        res = await product_answer_chain.with_retry().ainvoke(
             {
                 "query": query.strip('"'),
                 "query_cls": query_cls,
                 "top_k": top_k,
                 "use_source": False,
+                "top_token": top_token,
+                "min_top_k": min_top_k,
+                "max_top_k": max_top_k,
             }
         )
 
-    ret = answer
+    answer = res["parsed_answer"][0]
+    image_names = res["parsed_answer"][1]
+    context = res["context"]
+    origin_ret = answer
     if image_names and len(image_names) > 0:
-        ret += "," + str(image_names)
-    return ret
+        origin_ret += "," + str(image_names)
+
+    reason, score, _ = await judge_result_by_llm(
+        query, origin_ret, context=None, need_reanswer=False
+    )
+    if score < 5:
+        new_ret = await refine_answer(query, origin_ret, reason, context)
+        # 可以不需要下面这行
+        # new_reason, new_score, _ = await judge_result_by_llm(
+        #     query, new_ret, context=None, need_reanswer=False
+        # )
+        return new_ret
+    return origin_ret

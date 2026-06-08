@@ -20,7 +20,9 @@ dependencies = [
     "lingua-language-detector>=2.2.0",
     "llama-index>=0.14.21",
     "lxml>=6.1.0",
+    "matplotlib>=3.10.9",
     "pylcs>=0.1.1",
     "pymilvus==2.6.0",
     "python-dotenv>=1.2.2",
+    "tiktoken>=0.12.0",
 ]

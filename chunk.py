@@ -16,7 +16,11 @@ from langchain_text_splitters import (
 )
 from tqdm import tqdm
 
-from prompts import generate_image_description_prompt_template
+from config import get_config
+from prompts import (
+    generate_image_description_prompt_template,
+    generate_image_description_prompt_template_without_context,
+)
 from utils import encode_image, get_image_name, language_detect
 
 load_dotenv()
@@ -48,7 +52,7 @@ multi_analyzer_params = {
 }
 milvus = Milvus(
     embedding_function=embedding_model,
-    collection_name=os.getenv("MILVUS_COLLECTION_NAME", "handbook_knowledge_bank"),
+    collection_name=get_config()["MILVUS_COLLECTION_NAME"],
     connection_args=DEFAULT_MILVUS_CONNECTION,
     auto_id=True,
     drop_old=False,
@@ -103,6 +107,7 @@ def generate_image_description(
     image_context: str,
     image_name: str | Path,
     file_name: str,
+    use_contextual_augmentation: bool,
     language: Literal["chinese", "english"],
 ) -> str:
     """
@@ -118,26 +123,56 @@ def generate_image_description(
     if not image_path.exists():
         raise FileNotFoundError(f"图片路径不存在：{image_path}")
     image_base64, mime_type = encode_image(image_path)
+    if use_contextual_augmentation:
+        messages = [
+            {
+                "role": "human",
+                "content": [
+                    {
+                        "type": "image",
+                        "base64": image_base64,
+                        "mime_type": mime_type,
+                    },
+                    {
+                        "type": "text",
+                        "text": generate_image_description_prompt_template,
+                    },
+                ],
+            }
+        ]
+    else:
+        messages = [
+            {
+                "role": "human",
+                "content": [
+                    {
+                        "type": "image",
+                        "base64": image_base64,
+                        "mime_type": mime_type,
+                    },
+                    {
+                        "type": "text",
+                        "text": generate_image_description_prompt_template_without_context,
+                    },
+                ],
+            }
+        ]
 
-    messages = [
-        {
-            "role": "human",
-            "content": [
-                {
-                    "type": "image",
-                    "base64": image_base64,
-                    "mime_type": mime_type,
-                },
-                {"type": "text", "text": generate_image_description_prompt_template},
-            ],
-        }
-    ]
     prompt = ChatPromptTemplate.from_messages(messages, template_format="mustache")
     chain = prompt | llm | StrOutputParser() | parse_image_description_tag
+    if use_contextual_augmentation:
+        image_description = chain.with_retry(stop_after_attempt=10).invoke(
+            {
+                "file_name": file_name,
+                "image_context": image_context,
+                "language": language,
+            }
+        )
+    else:
+        image_description = chain.with_retry(stop_after_attempt=10).invoke(
+            {"file_name": file_name, "language": language}
+        )
 
-    image_description = chain.with_retry(stop_after_attempt=10).invoke(
-        {"file_name": file_name, "image_context": image_context, "language": language}
-    )
     if language != language_detect(image_description):
         raise Exception("图片描述的语言与手册的语言不一致")
 
@@ -148,6 +183,7 @@ def chunk_and_add_document(
     file_path: str,
     language: Literal["chinese", "english"],
     source: str,
+    use_contextual_augmentation: bool,
     is_save_to_local: bool = False,
 ):
     """
@@ -184,11 +220,16 @@ def chunk_and_add_document(
     global_image_index = 0
     description_file_path = None
     if is_save_to_local:
-        description_file_path = Path("knowledge_bank", txt_file_path.name).with_suffix(
-            ".md"
+        description_file_path = (
+            Path("knowledge_bank", txt_file_path.name).with_suffix(".md")
+            if use_contextual_augmentation
+            else Path("knowledge_bank_without_context", txt_file_path.name).with_suffix(
+                ".md"
+            )
         )
     final_insert_doc_list: list[Document] = []
     final_save_content: str = ""
+
     for index, doc in tqdm(
         enumerate(doc_list), total=len(doc_list), desc=f"正在处理{txt_file_path.name}"
     ):
@@ -240,8 +281,45 @@ def chunk_and_add_document(
             )
 
             image_description = generate_image_description(
-                llm, image_context, image_name, file_name, language
+                llm,
+                image_context,
+                image_name,
+                file_name,
+                use_contextual_augmentation,
+                language,
             )
+            image_description_results = []
+            if (
+                get_config()["IMAGE_DESCRIPTION_RESULTS_JSON_FILE"] is not None
+                and Path(get_config()["IMAGE_DESCRIPTION_RESULTS_JSON_FILE"]).exists()
+            ):
+                image_description_results = json.load(
+                    open(
+                        get_config()["IMAGE_DESCRIPTION_RESULTS_JSON_FILE"],
+                        "r",
+                        encoding="utf-8",
+                    )
+                )
+            if get_config()["IMAGE_DESCRIPTION_RESULTS_JSON_FILE"] is not None:
+                image_description_results.append(
+                    {
+                        "file_name": file_name,
+                        "image_name": image_name,
+                        "image_description": image_description,
+                    }
+                )
+                with open(
+                    get_config()["IMAGE_DESCRIPTION_RESULTS_JSON_FILE"],
+                    "w",
+                    encoding="utf-8",
+                ) as f:
+                    json.dump(
+                        image_description_results,
+                        f,
+                        ensure_ascii=False,
+                        indent=4,
+                    )
+
             if "<PIC>" in image_description:
                 raise ValueError("生成的图片描述中包含有<PIC>标签")
             page_content = page_content.replace(
@@ -270,11 +348,16 @@ def chunk_and_add_document(
 
 if __name__ == "__main__":
     # file_path = "processed_data/KownledgeBase/手册/冰箱手册_formatted.txt"
-    # chunk_and_add_document(file_path, "chinese")
+    # chunk_and_add_document(file_path, "chinese","冰箱手册.txt",False,is_save_to_local=True)
+
+    config = get_config()
+    collection_name = config["MILVUS_COLLECTION_NAME"]
+    use_contextual_augmentation = config["USE_CONTEXTUAL_AUGMENTATION"]
+
     english_handbook_names = []
     processed_dir = Path("processed_data/KownledgeBase/手册")
     language = None
-    collection_name = os.getenv("MILVUS_COLLECTION_NAME", "handbook_knowledge_bank")
+    # collection_name = os.getenv("MILVUS_COLLECTION_NAME", "handbook_knowledge_bank")
     with open(
         os.getenv("ENGLISH_HANDBOOK_NAME_FILE", "handbook_names.json"),
         "r",
@@ -284,7 +367,6 @@ if __name__ == "__main__":
 
     for file_path in processed_dir.glob("*.txt"):
         if "汇总英文手册" in file_path.stem:
-            # TODO: 处理汇总英文手册
             i = int(file_path.stem.split("_")[2])
             handbook_name = english_handbook_names[i - 1]
             language = "english"
@@ -309,5 +391,11 @@ if __name__ == "__main__":
                 logger.info(f"文件{file_path.name}已存在{data_count}条数据")
                 continue
 
-        chunk_and_add_document(str(file_path), language, source, is_save_to_local=True)
+        chunk_and_add_document(
+            str(file_path),
+            language,
+            source,
+            use_contextual_augmentation,
+            is_save_to_local=True,
+        )
         logger.info(f"文件{file_path.name}处理完成")

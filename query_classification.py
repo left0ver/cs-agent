@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 from collections import Counter
 from pathlib import Path
@@ -13,10 +14,16 @@ from langchain_milvus import Milvus
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from tqdm import tqdm
 
+from config import get_config
 from prompts import get_all_source
 from utils import language_detect
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
 embedding_model = OpenAIEmbeddings(
     model="text-embedding-3-large",
     base_url=os.getenv("EMBEDDING_BASE_URL"),
@@ -27,22 +34,7 @@ DEFAULT_MILVUS_CONNECTION = {
     "port": os.getenv("MILVUS_PORT", "19530"),
     "db_name": os.getenv("MILVUS_DB_NAME", "default"),
 }
-dense_store = Milvus(
-    embedding_function=embedding_model,
-    collection_name=os.getenv("MILVUS_COLLECTION_NAME", "handbook_knowledge_bank"),
-    text_field="text",
-    vector_field="dense",
-    auto_id=True,
-    drop_old=False,
-    enable_dynamic_field=True,
-    connection_args=DEFAULT_MILVUS_CONNECTION,
-    index_params=[
-        {
-            "index_type": "HNSW",
-            "metric_type": "COSINE",
-        },
-    ],
-)
+
 
 query_classification_model = ChatOpenAI(
     model="gpt-5.4",
@@ -81,24 +73,22 @@ def get_query_classification_prompt(language: Literal["chinese", "english"]) -> 
     # """
     #     )
     return (
-        f"""
-# Role
+        f"""# Role
 你是一个专业的查询分类专家，你的任务是根据用户的问题，按照我的要求对用户的问题进行分类。
 
 
 # Task
 我会提供一段用户的问题，你需要根据用户的问题，对用户的问题进行分类。
 1. 判断用户的问题是否和某个产品相关,是否可以在以下的某个手册中找到。
-  目前的手册有: {get_all_source(language)}"""
+目前的手册有: {get_all_source(language)}"""
         + """
 # 输出的格式
 请严格按照以下 JSON 结构输出（注意转义文本中的特殊字符以保证 JSON 的合法性）：
-{"""
-        + f"""source": Literal{[*get_all_source(language)]} | None # 判断用户的问题可能能在哪个手册中找到答案，如果用户的问题是通用性的问题，和某个产品无关，不能在所给的手册中找到相关的答案，则为None
-        """
-        + "question_type: Literal[product, general] # 如果source 不为None,则question_type=product,如果source为None,则你需要判断用户的问题是否是通识性问题（例如物流快递、投诉、发票、退货退款、维修、售后等问题），还是某个产品相关的问题，如果是通识性问题，则question_type=general,如果是产品相关问题，则question_type=product"
-        + "\n    source_confidence: float|None #source的置信度，如果source不为None，则你需要判断这个问题是与选择的source相关的置信度，范围在[0, 1]之间,如果source为None,则source_confidence为None"
-        + "\n    question_confidence: float|None # 置信度，如果source为None并且question_type=general,则你需要判断这个问题属于通识性问题的置信度，范围在[0, 1]之间,其他情况则置信度为None"
+{\n\t"""
+        + f"""'source': Literal{[*get_all_source(language)]} | None # 判断用户的问题可能能在哪个手册中找到答案，如果用户的问题是通用性的问题，和某个产品无关，不能在所给的手册中找到相关的答案，则为None。\n\t"""
+        + "'question_type': Literal[product, general] # 如果source 不为None,则question_type=product,如果source为None,则你需要判断用户的问题是否是通识性问题（例如物流快递、投诉、发票、退货退款、维修、售后等问题），还是某个产品相关的问题，如果是通识性问题，则question_type=general,如果是产品相关问题，则question_type=product。\n\t"
+        + "'source_confidence': float|None #source的置信度，如果source不为None，则你需要判断这个问题是与选择的source相关的置信度，范围在[0, 1]之间,如果source为None,则source_confidence为None。\n\t"
+        + "'question_confidence': float|None # 置信度，如果source为None并且question_type=general,则你需要判断这个问题属于通识性问题的置信度，范围在[0, 1]之间,其他情况则置信度为None。"
         + """
 }
 # 用户的问题:
@@ -109,7 +99,7 @@ def get_query_classification_prompt(language: Literal["chinese", "english"]) -> 
     )
 
 
-def query_classification_via_handbook_name(query: str) -> dict[str, str]:
+async def query_classification_via_handbook_name(query: str) -> dict[str, str]:
     """
     查询分类
     让LLM根据提供的手册名称，以及问题，判断该问题的类型，如果为product类型，则还需要判断该问题可以在哪个文档中找到答案，以及需要输出对应的置信度
@@ -128,9 +118,9 @@ def query_classification_via_handbook_name(query: str) -> dict[str, str]:
     query_classification_chain = (
         query_classification_prompt | query_classification_model
     ) | JsonOutputParser()
-    query_classification_result = query_classification_chain.with_retry().invoke(
-        {"query": query}
-    )
+    query_classification_result = await query_classification_chain.with_retry(
+        stop_after_attempt=5
+    ).ainvoke({"query": query})
     return {"language": language, **query_classification_result}
 
 
@@ -193,9 +183,9 @@ async def query_classification_via_toc(query: str) -> dict[str, str]:
     query_classification_chain = (
         query_classification_toc_prompt | query_classification_model
     ) | JsonOutputParser()
-    query_classification_result = query_classification_chain.with_retry().invoke(
-        {"query": query}
-    )
+    query_classification_result = await query_classification_chain.with_retry(
+        stop_after_attempt=5
+    ).ainvoke({"query": query})
     return {"language": language, **query_classification_result}
 
 
@@ -203,9 +193,27 @@ async def get_source_by_dense_store(query: str) -> dict[str, str]:
     """
     使用语义相似度搜索出top10chunk，根据chunk对应的文档的数量来预测该问题可以在哪个手册中找到答案
     """
+    dense_store = Milvus(
+        embedding_function=embedding_model,
+        # collection_name=os.getenv("MILVUS_COLLECTION_NAME", "handbook_knowledge_bank"),
+        collection_name=get_config()["MILVUS_COLLECTION_NAME"],
+        text_field="text",
+        vector_field="dense",
+        auto_id=True,
+        drop_old=False,
+        enable_dynamic_field=True,
+        connection_args=DEFAULT_MILVUS_CONNECTION,
+        index_params=[
+            {
+                "index_type": "HNSW",
+                "metric_type": "COSINE",
+            },
+        ],
+    )
+
     top_k = 10
     language = language_detect(query)
-    dense_result = dense_store.similarity_search(
+    dense_result = await dense_store.asimilarity_search(
         query,
         k=top_k,
         fetch_k=top_k,
@@ -216,14 +224,14 @@ async def get_source_by_dense_store(query: str) -> dict[str, str]:
     return {"dense_predict_source": dense_predict_source}
 
 
-async def ensembles_query_classification(query: str) -> dict[str, str]:
+async def ensembles_query_classification(query: str) -> dict[str, str | bool]:
     """
     集成了query_classification_via_handbook_name、query_classification_via_toc、get_source_by_dense_store来对query进行一个分类
     具体的流程可看assest/查询分类流程.png
     """
     language = language_detect(query)
     query_classification_result_via_handbook_name = (
-        query_classification_via_handbook_name(query)
+        await query_classification_via_handbook_name(query)
     )
     question_type = query_classification_result_via_handbook_name["question_type"]
     question_confidence_via_handbook_name = (
@@ -235,6 +243,7 @@ async def ensembles_query_classification(query: str) -> dict[str, str]:
     ]
     final_source = None
     final_question_type = None
+    only_llm_predict_once = False
     if question_type == "general":
         if question_confidence_via_handbook_name < 0.98:
             query_classification_result_via_toc = await query_classification_via_toc(
@@ -262,6 +271,7 @@ async def ensembles_query_classification(query: str) -> dict[str, str]:
             # 如果LLM根据handbook_name 预测出了source，则需要判断置信度
             if source_confidence_via_handbook_name >= 0.9:
                 final_source = source_via_handbook_name
+                only_llm_predict_once = True
             else:
                 tasks = [
                     asyncio.create_task(query_classification_via_toc(query)),
@@ -297,9 +307,11 @@ async def ensembles_query_classification(query: str) -> dict[str, str]:
                         else source_via_handbook_name
                     )
     return {
+        "source_via_handbook_name": source_via_handbook_name,
         "source": final_source,
         "question_type": final_question_type,
         "language": language,
+        "only_llm_predict_once": only_llm_predict_once,
     }
 
 
@@ -364,10 +376,13 @@ async def test_ensembles_query_classification():
     tasks = []
     batch_ids = []
     queries = []
+    start_id = 64
     end_id = 436
     question_file = Path("data/question_public.csv")
-    query_classification_file = Path("test_ensembles_query_classification.json")
-
+    query_classification_file = Path(
+        "experiment/查询分类/query_classification_ratio1.json"
+    )
+    exist_last_id = start_id - 1
     if query_classification_file.exists():
         results = json.load(open(query_classification_file, "r"))
         exist_last_id = max([result["id"] for result in results])

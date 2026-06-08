@@ -80,3 +80,16 @@ generate_image_description_prompt_template = """
 {{image_context}}
 </image-context>
 """
+
+generate_image_description_prompt_template_without_context = """
+## 任务
+我会给你一张图片，请你生成这张图片的描述。
+
+## 约束
+1. 你不需要生成多余的其他无用、无关的内容，只需要生成对应的图片描述即可。
+2. 你的描述需要是`{{language}}`语言的。
+
+##输出格式
+你需要以xml的格式输出结果,例如
+<image_description>图像的描述</image_description>
+"""
