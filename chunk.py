@@ -357,7 +357,6 @@ if __name__ == "__main__":
     english_handbook_names = []
     processed_dir = Path("processed_data/KownledgeBase/手册")
     language = None
-    # collection_name = os.getenv("MILVUS_COLLECTION_NAME", "handbook_knowledge_bank")
     with open(
         os.getenv("ENGLISH_HANDBOOK_NAME_FILE", "handbook_names.json"),
         "r",

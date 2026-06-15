@@ -4,6 +4,8 @@ import os
 from langchain_milvus import BM25BuiltInFunction, Milvus
 from langchain_openai import OpenAIEmbeddings
 
+from config import get_config
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,7 @@ def del_bank_by_handbook(source: str):
         },
         "by_field": "language",
     }
-    collection_name = os.getenv("MILVUS_COLLECTION_NAME", "handbook_knowledge_bank")
+    collection_name = get_config()["MILVUS_COLLECTION_NAME"]
     milvus = Milvus(
         embedding_function=embedding_model,
         collection_name=collection_name,
@@ -65,9 +67,7 @@ def del_bank_by_handbook(source: str):
         collection_name=collection_name,
         filter=f"source == '{source}'",
     )
-    logger.info(
-        f"{collection_name}集合中删除了{res['delete_count']}条{source}数据"
-    )
+    logger.info(f"{collection_name}集合中删除了{res['delete_count']}条{source}数据")
 
 
 if __name__ == "__main__":

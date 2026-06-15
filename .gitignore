@@ -7,6 +7,7 @@ knowledge_bank_without_context
 eval
 experiment
 statistics_retriever_length
+del_bank_by_handbook.py
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

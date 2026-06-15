@@ -33,8 +33,11 @@ def generate_catalog_or_summary(
     """
     根据手册内容生成目录或摘要,具体结果可看catalog目录
     """
-    # llm = ChatCohere(model="command-a-03-2025")
-    llm = ChatCohere(model="command-a-reasoning-08-2025", temperature=0.8)
+    llm = ChatCohere(
+        model="command-a-reasoning-08-2025",
+        temperature=0.8,
+        cohere_api_key=os.getenv("COHERE_API_KEY"),
+    )
     prompt = ChatPromptTemplate.from_messages(
         [
             (

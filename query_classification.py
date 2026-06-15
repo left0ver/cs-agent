@@ -195,7 +195,6 @@ async def get_source_by_dense_store(query: str) -> dict[str, str]:
     """
     dense_store = Milvus(
         embedding_function=embedding_model,
-        # collection_name=os.getenv("MILVUS_COLLECTION_NAME", "handbook_knowledge_bank"),
         collection_name=get_config()["MILVUS_COLLECTION_NAME"],
         text_field="text",
         vector_field="dense",

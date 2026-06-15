@@ -39,7 +39,6 @@ async def retriever(
     """根据query检索出相关的上下文"""
     milvus = Milvus(
         embedding_function=embedding_model,
-        # collection_name=os.getenv("MILVUS_COLLECTION_NAME", "handbook_knowledge_bank"),
         collection_name=get_config()["MILVUS_COLLECTION_NAME"],
         connection_args=DEFAULT_MILVUS_CONNECTION,
         auto_id=True,
