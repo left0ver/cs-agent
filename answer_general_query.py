@@ -1,26 +1,21 @@
 import os
 
-import pandas as pd
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_core.runnables.config import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
-from tqdm import tqdm
 
 load_dotenv()
 
-
-def answer_general_query(queries: list[str], thread_id: str) -> str:
-    """对通识问题进行回答，支持多轮对话，gemini--flash的效果比较好"""
-    general_question_llm = ChatOpenAI(
-        # model="gemini-3.1-pro-preview",
-        model="gemini-3-flash-preview",
-        base_url=os.getenv("GEMINI_BASE_URL"),
-        api_key=os.getenv("GEMINI_API_KEY"),
-    )
-
-    customer_system_prompt = """# Role
+general_question_llm = ChatOpenAI(
+    # model="gemini-3.1-pro-preview",
+    model="gemini-3-flash-preview",
+    # model = "gemini-3.5-flash",
+    base_url=os.getenv("GEMINI_BASE_URL"),
+    api_key=os.getenv("GEMINI_API_KEY"),
+)
+customer_system_prompt = """# Role
 你是一名资深、专业的的金牌电商客服，你需要与客户进行沟通并解决客服的问题。
 你的主要职责是解决客户在售前、售中、售后遇到的所有问题，促成交易，并提供令人愉悦的购物体验。
 
@@ -37,20 +32,17 @@ def answer_general_query(queries: list[str], thread_id: str) -> str:
 # 回复格式要求
 1. 不要换行，不要使用1. 2. 3. 的序号
 """
-    agent = create_agent(
-        model=general_question_llm,
-        system_prompt=customer_system_prompt,
-        checkpointer=InMemorySaver(),
-    )
 
-    answer = ""
+agent = create_agent(
+    model=general_question_llm,
+    system_prompt=customer_system_prompt,
+    checkpointer=InMemorySaver(),
+)
+
+
+def answer_general_query(query: str, thread_id: str) -> str:
+    """对通识问题进行回答，支持多轮对话，gemini-flash的效果比较好"""
     config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
-    for i, query in enumerate(queries):
-        query = query.strip('"')
-        res = agent.invoke({"messages": [{"role": "user", "content": query}]}, config)
-
-        if i == 0:
-            answer += res["messages"][-1].text
-        else:
-            answer += ",\n" + res["messages"][-1].text
-    return answer
+    query = query.strip('"')
+    res = agent.invoke({"messages": [{"role": "user", "content": query}]}, config)
+    return res["messages"][-1].text

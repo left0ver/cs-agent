@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from typing import Literal
 
 from dotenv import load_dotenv
@@ -52,32 +53,18 @@ async def router_by_query_cls(x: dict) -> str:
     question_type = query_cls["question_type"]
     top_k = x["top_k"]
     use_source = x["use_source"]
-    top_token = x["top_token"]
-    min_top_k = x["min_top_k"]
-    max_top_k = x["max_top_k"]
+    thread_id = x["thread_id"]
+
     if query_cls["source"] is None and question_type == "general":
-        queries = query.split(",\n")
-        return answer_general_query(queries, "1")
+        return answer_general_query(query, thread_id)
     else:
         ret = await answer_product_query(
-            query,
-            "1",
-            query_cls,
-            top_k=top_k,
-            use_source=use_source,
-            top_token=top_token,
-            min_top_k=min_top_k,
-            max_top_k=max_top_k,
+            query, "1", query_cls, top_k=top_k, use_source=use_source
         )
         return ret
 
-async def pipeline(
-    query: str,
-    top_k: int,
-    top_token: int,
-    min_top_k: int,
-    max_top_k: int,
-) -> str | None:
+
+async def pipeline(query: str, thread_id: str | None = None, top_k: int = 19) -> str:
     pipeline_chain = RunnablePassthrough.assign(
         query_cls=RunnableLambda(wrap_ensembles_query_classification)
     ) | RunnableLambda(router_by_query_cls)
@@ -87,12 +74,9 @@ async def pipeline(
             "query": query.strip('"'),
             "top_k": top_k,
             "use_source": True,
-            "top_token": top_token,
-            "min_top_k": min_top_k,
-            "max_top_k": max_top_k,
+            "thread_id": thread_id,
         }
     )
-
     return answer
 
 
@@ -109,9 +93,6 @@ if __name__ == "__main__":
 
         # query = "我收到的商品和图片不一样，颜色偏差很大，我要投诉！"
         top_k = 19
-        top_token = -1
-        min_top_k = 5
-        max_top_k = 30
         queries = [
             # "该如何关闭吹风机？",
             # "空调的重要组成部件有哪些？",
@@ -125,12 +106,15 @@ if __name__ == "__main__":
             # "如何使用空调的自动转换运行功能？",
             # "如何开启空调的节能制冷模式？",
             # "无遥控器时如何操作空调？",
+            "Have you ever wondered how to remove the camera shutter button? Understanding this process can enhance your photography experience and allow for quick repairs!",
+            "我收到的商品和图片不一样，颜色偏差很大，我要投诉！",
+            "使用吹风机时，人员需要佩戴哪些防护装备？",
+            "如何清洁洗碗机的进水管滤网？",
             "空气净化器需要长期存放时该怎么做？",
             "健身追踪器是如何测量我的心率的？",
             "如何在Windows系统中为蓝牙激光鼠标设置快速配对？",
             "如何使用烤箱的滑动搁架？",
-            "How can you install the handset of a landline?"
-            "如何让空调实现自动重启？",
+            "How can you install the handset of a landline?如何让空调实现自动重启？",
             "不同型号空调的清洁频率是多少？",
             "如何清洁空调的空气滤网？",
             "如何清洁空调的3M多重防护滤网？",
@@ -147,13 +131,12 @@ if __name__ == "__main__":
             "如何为洗碗机添加洗涤剂？",
             "如何为洗碗机添加洗涤块？",
         ]
+
         for query in queries:
-            answer = await pipeline(
-                query,
-                top_k,
-                top_token,
-                min_top_k,
-                max_top_k,
+            start_time = time.time()
+            answer = await pipeline(query, top_k)
+            print(
+                f"query: {query}\nanswer: {answer}\ncost time: {time.time() - start_time}s\n\n"
             )
             # print(answer)
 

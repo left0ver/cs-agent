@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from config import get_config
 from pipline import pipeline
+import uuid
 
 load_dotenv()
 
@@ -16,16 +17,14 @@ async def submit():
     对所有问题生成回答并提交
     """
     top_k = 19
-    top_token = -1
-    min_top_k = 5
-    max_top_k = 30
+    MAX_CONCURRENCY = 8
     collection_name = get_config()["MILVUS_COLLECTION_NAME"]
     use_query_cls = get_config()["USE_QUERY_CLS"]
-    submit_file = f"submission/submit_all_top_k={top_k}_use_query_cls={use_query_cls}_{collection_name}.csv"
+    submit_file = f"submission/submit_all_top_k={top_k}_use_query_cls={use_query_cls}_{collection_name}_1.csv"
     question_file = "data/question_public.csv"
     df = pd.read_csv(question_file, index_col="id")
-    product_questions_start_id = 64
-    product_questions_end_id = 436
+    product_questions_start_id = 1
+    product_questions_end_id = 58
 
     exist_last_id = -1
     submit_path = Path(submit_file)
@@ -34,7 +33,7 @@ async def submit():
         results = pd.read_csv(submit_file).to_dict(orient="records")
         exist_last_id = max([result["id"] for result in results])
 
-    max_concurrency = 8
+    max_concurrency = MAX_CONCURRENCY
     tasks = []
     batch_ids = []
     placeholder_answer = "您好，您的问题已收到，请您耐心等待处理结果，谢谢。"
@@ -43,20 +42,18 @@ async def submit():
         if row[0] <= exist_last_id:
             continue
         if row[0] >= product_questions_start_id and row[0] <= product_questions_end_id:
-            # for _ in range(max_concurrency):
             question = row[1]["question"].strip('"')
-            tasks.append(
-                asyncio.create_task(
-                    pipeline(
-                        question,
-                        top_k,
-                        top_token,
-                        min_top_k,
-                        max_top_k,
-                    )
-                )
-            )
-            batch_ids.append(row[0])
+            questions = question.split(",\n")
+            thread_id = str(uuid.uuid4())
+            if len(questions) > 1:
+                # 多轮对话
+                for query in questions:
+                    tasks.append(asyncio.create_task(pipeline(query, thread_id, top_k)))
+                    batch_ids.append(row[0])
+            else:
+                # 单轮对话
+                tasks.append(asyncio.create_task(pipeline(question, thread_id, top_k)))
+                batch_ids.append(row[0])
             max_concurrency -= 1
         else:
             results.append(
@@ -72,15 +69,21 @@ async def submit():
             for id, ret in zip(batch_ids, rets):
                 if ret is None:
                     ret = placeholder_answer
-                results.append(
-                    {
-                        "id": id,
-                        "ret": ret,
-                    }
-                )
+                exist_ids = [result["id"] for result in results]
+                # 合并多轮对话的结果  
+                if id in exist_ids:
+                    idx = exist_ids.index(id)
+                    results[idx]["ret"] = f"{results[idx]['ret']},\n{ret}"
+                else:
+                    results.append(
+                        {
+                            "id": id,
+                            "ret": ret,
+                        }
+                    )
             tasks = []
             batch_ids = []
-            max_concurrency = 8
+            max_concurrency = MAX_CONCURRENCY
             pd.DataFrame(results).to_csv(submit_file, index=False)
 
 

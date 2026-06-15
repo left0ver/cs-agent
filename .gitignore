@@ -2,7 +2,6 @@ data/
 volumes
 compare
 knowledge_bank
-submission
 processed_data
 knowledge_bank_without_context
 eval
