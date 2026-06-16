@@ -106,7 +106,7 @@ if __name__ == "__main__":
             # "如何使用空调的自动转换运行功能？",
             # "如何开启空调的节能制冷模式？",
             # "无遥控器时如何操作空调？",
-            "Have you ever wondered how to remove the camera shutter button? Understanding this process can enhance your photography experience and allow for quick repairs!",
+            # "Have you ever wondered how to remove the camera shutter button? Understanding this process can enhance your photography experience and allow for quick repairs!",
             "我收到的商品和图片不一样，颜色偏差很大，我要投诉！",
             "使用吹风机时，人员需要佩戴哪些防护装备？",
             "如何清洁洗碗机的进水管滤网？",
@@ -133,11 +133,15 @@ if __name__ == "__main__":
         ]
 
         for query in queries:
+            thread_id = "1"
             start_time = time.time()
-            answer = await pipeline(query, top_k)
-            print(
-                f"query: {query}\nanswer: {answer}\ncost time: {time.time() - start_time}s\n\n"
-            )
+            answer = await pipeline(query, thread_id, top_k)
+            # print(
+            #     f"query: {query}\nanswer: {answer}\ncost time: {time.time() - start_time}s\n\n"
+            # )
+            print(f"cost time: {time.time() - start_time}s\n\n")
+            pass
+            # print()
             # print(answer)
 
     asyncio.run(main())
