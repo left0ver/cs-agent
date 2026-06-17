@@ -47,6 +47,8 @@ class ChatRequestBody(BaseModel):
     )
     images: List[str] = Field(
         default=[],
+        min_length=0,
+        max_length=3,
         description="Base64 图片列表，格式为data:image/{png/jpg/jpeg/webp};base64,{编码内容}",
     )
     stream: bool = Field(
