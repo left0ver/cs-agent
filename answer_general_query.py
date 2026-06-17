@@ -10,8 +10,8 @@ load_dotenv()
 
 general_question_llm = ChatOpenAI(
     # model="gemini-3.1-pro-preview",
-    model="gemini-3-flash-preview",
-    # model = "gemini-3.5-flash",
+    # model="gemini-3-flash-preview",
+    model = "gemini-3.5-flash",
     base_url=os.getenv("GEMINI_BASE_URL"),
     api_key=os.getenv("GEMINI_API_KEY"),
 )

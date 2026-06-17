@@ -6,10 +6,7 @@ knowledge_bank_without_context
 eval
 configs
 experiment
-milvus-backup-files
 statistics_retriever_length
-mc
-milvus-backup
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
