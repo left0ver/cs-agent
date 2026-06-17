@@ -347,15 +347,15 @@ def chunk_and_add_document(
 
 
 if __name__ == "__main__":
-    # file_path = "processed_data/KownledgeBase/手册/冰箱手册_formatted.txt"
-    # chunk_and_add_document(file_path, "chinese","冰箱手册.txt",False,is_save_to_local=True)
-
+    # 配置processed_dir
+    processed_dir = Path("processed_data/KownledgeBase/手册")
+    
     config = get_config()
     collection_name = config["MILVUS_COLLECTION_NAME"]
     use_contextual_augmentation = config["USE_CONTEXTUAL_AUGMENTATION"]
 
     english_handbook_names = []
-    processed_dir = Path("processed_data/KownledgeBase/手册")
+    
     language = None
     with open(
         os.getenv("ENGLISH_HANDBOOK_NAME_FILE", "handbook_names.json"),
@@ -376,9 +376,11 @@ if __name__ == "__main__":
         source = handbook_name + ".txt"
         # 有问题的三个文件：发电机手册_formatted，可编程温控器手册_formatted，洗碗机手册_formatted，PIC标签数量不对
         logger.info(f"正在处理文件{file_path.name}")
+        
         has_collection = milvus.client.has_collection(collection_name)
 
         if has_collection:
+            # 如果集合中已经存在该手册的数据，则会跳过该手册
             results = milvus.client.query(
                 collection_name=collection_name,
                 filter=f"source == '{source}'",

@@ -127,6 +127,7 @@ def preprocess_handbook(content: str) -> tuple[str, str, list[str]]:
         | (lambda res: ensure_format_correct(description, res))
     )
     formatted_description = chain.with_retry(
+        stop_after_attempt = 5,
         retry_if_exception_type=(Exception, FormatException)
     ).invoke({"description": description})
     # 处理之后的手册内容，没处理的手册内容，图片列表
@@ -134,8 +135,8 @@ def preprocess_handbook(content: str) -> tuple[str, str, list[str]]:
 
 
 def preprocess_all_handbook(
-    handbook_dir: str = "data/KownledgeBase/手册",
-    processed_dir: str = "processed_data/KownledgeBase/手册",
+    handbook_dir: str,
+    processed_dir: str,
 ):
     """
     对所有的手册进行预处理
@@ -217,4 +218,6 @@ if __name__ == "__main__":
     #     content = f.read()
     # formatted_description, origin_description, image_path_list = format_data(content)
     # print(formatted_description)
-    preprocess_all_handbook()
+    preprocess_all_handbook(
+        "data/KownledgeBase/手册", "processed_data/KownledgeBase/手册"
+    )

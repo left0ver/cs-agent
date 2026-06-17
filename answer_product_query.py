@@ -52,6 +52,9 @@ async def get_context(x: dict) -> str:
 
 
 async def refine_answer_direct(query: str, origin_ret: str, context: str) -> str:
+    """
+    使用LLM对上一步生成的答案进行优化
+    """
     refine_answer_prompt_template = """你是一个客服专家，你需要根据用户的问题和所给上下文对这段客服回答进行优化。
 # 任务
 我会给你用户的问题，客服对该问题的回答（包含图片）、上下文信息，你需要根据原来的回答、回答中的图片以及上下文信息优化该回答，你需要在保证原来回答的基本内容不变的前提下，对回答进行优化，使得优化后的回答结构严谨连贯，图片与文本完美互补，你优化之后的回答是最终回答用户的答案。
@@ -147,7 +150,6 @@ async def refine_answer_direct(query: str, origin_ret: str, context: str) -> str
 
     return ret
 
-# TODO: 多理多轮对话的情况,但是目前初赛中product的题目没有多轮对话的情况
 async def answer_product_query(
     query: str,
     thread_id: str,
@@ -155,6 +157,7 @@ async def answer_product_query(
     top_k: int,
     use_source: bool,
 ):
+    """处理产品类的问题，得到最终的答案"""
     llm = ChatOpenAI(
         model="gpt-5.5",
         base_url=os.getenv("OPEANAI_BASE_URL"),
@@ -219,10 +222,10 @@ async def answer_product_query(
     answer = res["parsed_answer"][0]
     image_names = res["parsed_answer"][1]
     context = res["context"]
-
+    # 如果查询分类错误可能会导致检索的上下文不相关，导致模型回答不了
     if not llm_can_answer_the_question(answer):
         logger.info(f"first answer: {query} -> {answer}")
-        # 第二次回答
+        # 不使用查询分类的结果，重新检索
         context = await get_context(
             {
                 "query": query.strip('"'),
@@ -235,6 +238,6 @@ async def answer_product_query(
     origin_ret = answer
     if image_names and len(image_names) > 0:
         origin_ret += "," + str(image_names)
-
+    # 优化生成的答案
     new_ret = await refine_answer_direct(query, origin_ret, context)
     return new_ret
