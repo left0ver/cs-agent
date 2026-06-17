@@ -1,103 +1,3 @@
-# 不重新建向量数据库复现
-
-1. 下载uv
-
-   ```shell
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
-2. 进行项目根目录，执行下面的命令下载依赖
-
-   ```shell
-   uv sync -i https://pypi.tuna.tsinghua.edu.cn/simple
-   source .venv/bin/activate
-   ```
-
-3. 配置key,按文件中的注释要求配置即可
-
-   ```shell
-   cp .env.example .env
-   ```
-
-4. 配置.env 和 config.py中的内容，config.py中只要配置MILVUS_COLLECTION_NAME_DEFAULT变量即可，设置向量数据库的集合名称
-
-5. 启动milvus数据库，
-
-   ```shell
-   sudo docker compose -f milvus-docker-compose.yml up -d
-   ```
-
-6. 可以选择重新建立向量数据库，也可以使用已经建立好的向量数据库
-
-   重新建立向量数据库，需要运行`chunk.py`,对预处理好的数据进行切块并将pic转为对应的描述，再入库
-
-   如果需要使用我建立的向量数据库，则需要在启动之后将数据导入进去，`milvus-backup-files`中就是对应的数据,只需要在启动了milvus数据库了之后运行下面的命令即可将数据导入向量数据库中即可
-
-```shell
-./mc alias set dst http://127.0.0.1:9000 minioadmin minioadmin
-./mc mb dst/a-bucket --ignore-existing
-./mc cp --recursive \
-  ./milvus-backup-files/milvus_to_aliyun_20260615 \
-  dst/a-bucket/backup/
-  
-./milvus-backup restore \
-  -n milvus_to_aliyun_20260615 \
-  --config backup.yaml
-```
-
-7. 启动接口
-
-   ```shell
-   python interface.py
-   ```
-
-   访问`http://localhost:8000/scalar` 查看接口文档
-
-
-
-# 从0开始复现
-
-1. 下载uv
-
-   ```shell
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
-2. 进行项目根目录，执行下面的命令下载依赖
-
-   ```shell
-   uv sync -i https://pypi.tuna.tsinghua.edu.cn/simple
-   source .venv/bin/activate
-   ```
-
-3. 配置key,按文件中的注释要求配置即可
-
-   ```shell
-   cp .env.example .env
-   ```
-
-4. 配置.env 和 config.py中的内容，config.py中只要配置MILVUS_COLLECTION_NAME_DEFAULT变量即可，设置向量数据库的集合名称
-
-5. 启动milvus数据库，
-
-   ```shell
-   sudo docker compose -f milvus-docker-compose.yml up -d
-   ```
-
-6. 运行`preprocess.py`使用`gemini-2.5-pro`对手册预处理
-
-7. 之后运行`chunk.py`对文本进行切块、将pic转为文本描述，最后将chunk向量化并入库
-
-8. 运行`generate_handbook_name.py`生成英文的手册名称
-
-9. 运行`generate_catalog.py`生成手册的目录
-
-10. 启动接口
-
-   ```shell
-   python interface.py
-   ```
-
-   访问`http://localhost:8000/scalar` 查看接口文档
-
 # 项目目录说明
 
 ```python
@@ -136,3 +36,81 @@ cs_agent
 |- milvus-backup # milvus的备份和恢复的工具
 └─ uv.lock
 ```
+
+
+
+# 依赖安装
+
+1. 下载uv
+
+   ```shell
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+2. 进行项目根目录，执行下面的命令下载依赖
+
+   ```shell
+   uv sync -i https://pypi.tuna.tsinghua.edu.cn/simple
+   source .venv/bin/activate
+   ```
+
+3. 配置key,按文件中的注释要求配置即可
+
+   ```shell
+   cp .env.example .env
+   ```
+
+4. 配置.env 和 config.py中的内容，config.py中只要配置MILVUS_COLLECTION_NAME_DEFAULT变量即可，设置向量数据库的集合名称
+
+5. 启动milvus数据库，
+
+   ```shell
+   sudo docker compose -f milvus-docker-compose.yml up -d
+   ```
+
+# 使用已经有的向量数据库复现
+
+1. 可以选择重新建立向量数据库，也可以使用已经建立好的向量数据库
+
+   重新建立向量数据库，需要运行`chunk.py`,对预处理好的数据进行切块并将pic转为对应的描述，再入库
+
+   如果需要使用我建立的向量数据库，则需要在启动之后将数据导入进去，`milvus-backup-files`中就是对应的数据,只需要在启动了milvus数据库了之后运行下面的命令即可将数据导入向量数据库中即可
+
+```shell
+./mc alias set dst http://127.0.0.1:9000 minioadmin minioadmin
+./mc mb dst/a-bucket --ignore-existing
+./mc cp --recursive \
+  ./milvus-backup-files/milvus_to_aliyun_20260615 \
+  dst/a-bucket/backup/
+  
+./milvus-backup restore \
+  -n milvus_to_aliyun_20260615 \
+  --config backup.yaml
+```
+
+2. 启动接口
+
+   ```shell
+   python interface.py
+   ```
+
+   访问`http://localhost:8000/scalar` 查看接口文档
+
+
+
+# 从0开始复现
+
+1. 运行`preprocess.py`使用`gemini-2.5-pro`对手册预处理
+
+2. 之后运行`chunk.py`对文本进行切块、将pic转为文本描述，最后将chunk向量化并入库
+
+3. 运行`generate_handbook_name.py`生成英文的手册名称
+
+4. 运行`generate_catalog.py`生成手册的目录
+
+5. 启动接口
+
+   ```shell
+   python interface.py
+   ```
+
+   访问`http://localhost:8000/scalar` 查看接口文档
