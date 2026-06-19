@@ -186,19 +186,15 @@ async def chat(
     if session_id is None:
         session_id = f"kf_{str(uuid.uuid4())}"
 
-    if is_stream is False:
-        answer = await pipeline(question, thread_id=session_id)
-        timestamp = str(int(time.time()))
-        return ChatResponse(
-            code=0,
-            message="success",
-            data=ChatResponseData(
-                answer=answer, session_id=session_id, timestamp=timestamp
-            ),
-        )
-    else:
-        # 流式返回
-        pass
+    answer = await pipeline(question, thread_id=session_id)
+    timestamp = str(int(time.time()))
+    return ChatResponse(
+        code=0,
+        message="success",
+        data=ChatResponseData(
+            answer=answer, session_id=session_id, timestamp=timestamp
+        ),
+    )
 
 
 @app.get("/scalar", include_in_schema=False)
@@ -211,5 +207,5 @@ async def scalar_docs():
 
 if __name__ == "__main__":
     uvicorn.run(
-        "interface:app", host="0.0.0.0", port=8000, env_file=".env", reload=True
+        "interface:app", host="0.0.0.0", port=8000, env_file=".env", reload=False
     )
