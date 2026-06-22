@@ -7,10 +7,11 @@ from typing import List, Optional
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from scalar_fastapi import get_scalar_api_reference
 
-from pipline import pipeline
+from pipline import pipeline, pipeline_stream
 
 app = FastAPI()
 
@@ -151,7 +152,7 @@ def verify_x_client_type(x_client_type: Optional[str]):
     "/chat",
     response_model=ChatResponse,
     summary="客服问答接口",
-    description="提供客服问答服务，支持文本和图片输入，返回客服回复的答案,暂时只支持非流式返回",
+    description="提供客服问答服务，支持文本和图片输入，返回客服回复的答案,同时支持流式返回和非流式返回",
 )
 async def chat(
     body: ChatRequestBody,
@@ -171,7 +172,7 @@ async def chat(
         description="标识调用终端，用于客服话术适配,只能为app,ios,web,wx_miniprogram中的一个",
         example="app",
     ),
-) -> ChatResponse:
+) -> ChatResponse | StreamingResponse:
     verify_bearer_token(authorization)
     if x_client_type is not None:
         verify_x_client_type(x_client_type)
@@ -185,16 +186,21 @@ async def chat(
         validate_base64_image(base64_image)
     if session_id is None:
         session_id = f"kf_{str(uuid.uuid4())}"
-
-    answer = await pipeline(question, thread_id=session_id)
-    timestamp = str(int(time.time()))
-    return ChatResponse(
-        code=0,
-        message="success",
-        data=ChatResponseData(
-            answer=answer, session_id=session_id, timestamp=timestamp
-        ),
-    )
+    if is_stream:
+        return StreamingResponse(
+            pipeline_stream(question, thread_id=session_id),
+            media_type="text/event-stream",
+        )
+    else:
+        answer = await pipeline(question, thread_id=session_id)
+        timestamp = str(int(time.time()))
+        return ChatResponse(
+            code=0,
+            message="success",
+            data=ChatResponseData(
+                answer=answer, session_id=session_id, timestamp=timestamp
+            ),
+        )
 
 
 @app.get("/scalar", include_in_schema=False)

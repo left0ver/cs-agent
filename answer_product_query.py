@@ -20,6 +20,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+refine_answer_llm = ChatOpenAI(
+        model="gpt-5.5",
+        base_url=os.getenv("OPEANAI_BASE_URL"),
+        api_key=os.getenv("OPEANAI_API_KEY"),
+        tags=["final_answer_model"],
+    )
+
 def ensure_answer_language(
     answer: str, image_names: list[str], query_language: Literal["chinese", "english"]
 ) -> bool:
@@ -91,11 +98,6 @@ async def refine_answer_direct(query: str, origin_ret: str, context: str) -> str
         get_image_name(os.path.join(IMAGE_ROOT_DIR, image))
         for image in origin_image_list
     ]
-    llm = ChatOpenAI(
-        model="gpt-5.5",
-        base_url=os.getenv("OPEANAI_BASE_URL"),
-        api_key=os.getenv("OPEANAI_API_KEY"),
-    )
     messages = [
         {
             "role": "human",
@@ -108,7 +110,7 @@ async def refine_answer_direct(query: str, origin_ret: str, context: str) -> str
         }
     ]
     prompt = ChatPromptTemplate.from_messages(messages, template_format="mustache")
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | refine_answer_llm | JsonOutputParser()
     result = await chain.with_retry().ainvoke(
         {
             "query": query,

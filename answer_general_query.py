@@ -11,9 +11,10 @@ load_dotenv()
 general_question_llm = ChatOpenAI(
     # model="gemini-3.1-pro-preview",
     # model="gemini-3-flash-preview",
-    model = "gemini-3.5-flash",
+    model="gemini-3.5-flash",
     base_url=os.getenv("GEMINI_BASE_URL"),
     api_key=os.getenv("GEMINI_API_KEY"),
+    tags=["final_answer_model"],
 )
 customer_system_prompt = """# Role
 你是一名资深、专业的的金牌电商客服，你需要与客户进行沟通并解决客服的问题。

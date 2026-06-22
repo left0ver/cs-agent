@@ -1,6 +1,8 @@
+import json
 import logging
 import os
 import time
+from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Literal
 
 from dotenv import load_dotenv
@@ -68,7 +70,6 @@ async def pipeline(query: str, thread_id: str | None = None, top_k: int = 19) ->
     pipeline_chain = RunnablePassthrough.assign(
         query_cls=RunnableLambda(wrap_ensembles_query_classification)
     ) | RunnableLambda(router_by_query_cls)
-
     answer = await pipeline_chain.with_retry().ainvoke(
         {
             "query": query.strip('"'),
@@ -78,6 +79,32 @@ async def pipeline(query: str, thread_id: str | None = None, top_k: int = 19) ->
         }
     )
     return answer
+
+
+async def pipeline_stream(
+    query: str,
+    thread_id: str | None = None,
+    top_k: int = 19,
+) -> AsyncGenerator[str, None]:
+    pipeline_chain = RunnablePassthrough.assign(
+        query_cls=RunnableLambda(wrap_ensembles_query_classification)
+    ) | RunnableLambda(router_by_query_cls)
+
+    async for event in pipeline_chain.with_retry().astream_events(
+        {
+            "query": query.strip('"'),
+            "top_k": top_k,
+            "use_source": True,
+            "thread_id": thread_id,
+        },
+        include_tags=["final_answer_model"],
+    ):
+        if event["event"] == "on_chat_model_stream":
+            chunk = event["data"]["chunk"]
+            if chunk.content:
+                data = {"delta": chunk.content}
+                yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                # yield  chunk.content
 
 
 if __name__ == "__main__":
